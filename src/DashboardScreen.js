@@ -1,4 +1,3 @@
-// src/DashboardScreen.js
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
@@ -8,21 +7,19 @@ import {
   TouchableOpacity,
   Dimensions,
   Platform,
-  Animated, // Import Animated
+  Animated,
   ScrollView,
   ActivityIndicator,
   Alert,
-  Linking // Import Linking to open URLs if needed
+  Linking
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import MainHeader from './components/MainHeader';
 import Sidebar from './components/Sidebar';
 import Icon from 'react-native-vector-icons/Feather';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons'; // For Excel icon
-// Import the DashboardContent component
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import DashboardContent from './components/DashboardContent';
-// Import the custom DropdownPicker component
 import DropdownPicker from './components/DropdownPicker';
 
 const DashboardScreen = () => {
@@ -30,26 +27,24 @@ const DashboardScreen = () => {
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isDesktop, setIsDesktop] = useState(false);
-  const [activeNavItem, setActiveNavItem] = useState('Dashboard'); // Default to Dashboard
+  const [activeNavItem, setActiveNavItem] = useState('Dashboard');
   const animatedSidebarWidth = useRef(new Animated.Value(250)).current;
 
-  // State to store token and loading status
   const [userToken, setUserToken] = useState(null);
-  const [appReady, setAppReady] = useState(false); // New state to track app readiness
+  const [appReady, setAppReady] = useState(false);
 
+  // States for Data Report table - THESE WILL NOW FETCH DIRECTLY
   const [reports, setReports] = useState([]);
-  const [loadingReports, setLoadingReports] = useState(true);
+  const [loadingReports, setLoadingReports] = useState(true); // Still true initially for Data Report
   const [errorReports, setErrorReports] = useState(null);
-  // New state for export status
-  const [isExporting, setIsExporting] = useState(false); // Manages export button loading state
+
+  const [isExporting, setIsExporting] = useState(false);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
 
-  // States for pagination limit dropdown
-  const [selectedLimit, setSelectedLimit] = useState(10); // Default limit for items per page
-  // Options for the pagination limit dropdown - NOW INCLUDES "Tampilkan Semua Data"
+  const [selectedLimit, setSelectedLimit] = useState(10);
   const paginationLimitOptions = [
     { label: 'Tampilkan 10 item', value: 10 },
     { label: 'Tampilkan 20 item', value: 20 },
@@ -57,21 +52,17 @@ const DashboardScreen = () => {
     { label: 'Tampilkan 40 item', value: 40 },
     { label: 'Tampilkan 50 item', value: 50 },
     { label: 'Tampilkan 100 item', value: 100 },
-    { label: 'Tampilkan Semua Data', value: 'all' }, // New option to display all data
+    { label: 'Tampilkan Semua Data', value: 'all' },
   ];
 
-  // Animation states for content transition
-  const contentFadeAnim = useRef(new Animated.Value(1)).current; // For opacity: 1 (visible) to 0 (hidden)
-  const contentSlideAnim = useRef(new Animated.Value(0)).current; // For translateY: 0 (on screen) to +/- height (off screen)
+  const contentFadeAnim = useRef(new Animated.Value(1)).current;
+  const contentSlideAnim = useRef(new Animated.Value(0)).current;
 
-  // State to hold the item currently *being displayed* (can lag behind activeNavItem during transition)
   const [displayActiveNavItem, setDisplayActiveNavItem] = useState('Dashboard');
 
-  // Mapping for navigation item order to determine slide direction
   const navItemOrderMap = useRef({
     'Dashboard': 0,
     'Data Report': 1,
-    // Add other nav items here if any
   }).current;
 
   const estimatedHeaderHeight = Platform.select({
@@ -80,10 +71,18 @@ const DashboardScreen = () => {
     default: 70,
   });
 
-  const convertToJakartaTime = useCallback((utcTimestamp) => {
+  const convertToJakartaTime = useCallback((utcTimestamp, format = 'full') => {
     if (!utcTimestamp) return 'N/A';
     try {
       const date = new Date(utcTimestamp);
+      if (format === 'dateOnly') {
+        return new Intl.DateTimeFormat('id-ID', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          timeZone: 'Asia/Jakarta',
+        }).format(date);
+      }
       return new Intl.DateTimeFormat('id-ID', {
         year: 'numeric',
         month: '2-digit',
@@ -139,7 +138,6 @@ const DashboardScreen = () => {
     }
   }, [isSidebarOpen, isDesktop, animatedSidebarWidth]);
 
-  // Effect to load token from AsyncStorage when component first mounts (bootstrap)
   useEffect(() => {
     let isMounted = true;
     const bootstrapAsync = async () => {
@@ -167,64 +165,54 @@ const DashboardScreen = () => {
     };
   }, []);
 
-  // Effect for content transition animation
   useEffect(() => {
-    // Only animate if the activeNavItem has actually changed and app is ready
     if (appReady && activeNavItem !== displayActiveNavItem) {
       const currentOrder = navItemOrderMap[activeNavItem];
-      const previousOrder = navItemOrderMap[displayActiveNavItem]; // Use currently displayed item's order to determine direction
+      const previousOrder = navItemOrderMap[displayActiveNavItem];
 
-      // Determine slide direction: 1 for down (new item is "below" previous), -1 for up (new item is "above")
       const direction = currentOrder > previousOrder ? 1 : -1;
       const screenHeight = Dimensions.get('window').height;
 
-      // Phase 1: Animate current content out (slide out and fade out)
       Animated.parallel([
         Animated.timing(contentFadeAnim, {
-          toValue: 0, // Fade out
+          toValue: 0,
           duration: 200,
           useNativeDriver: true,
         }),
         Animated.timing(contentSlideAnim, {
-          toValue: direction * screenHeight * 0.2, // Slide a bit off-screen (e.g., 20% of screen height)
+          toValue: direction * screenHeight * 0.3,
           duration: 200,
           useNativeDriver: true,
         }),
       ]).start(() => {
-        // Phase 2: After fade-out, update the content to be displayed
         setDisplayActiveNavItem(activeNavItem);
-
-        // Instantly reset slide animation to the opposite side for the new content to slide in from
-        contentSlideAnim.setValue(-direction * screenHeight * 0.2);
-
-        // Phase 3: Animate new content in (slide in and fade in)
+        contentSlideAnim.setValue(-direction * screenHeight * 0.3);
         Animated.parallel([
           Animated.timing(contentFadeAnim, {
-            toValue: 1, // Fade in
+            toValue: 1,
             duration: 250,
             useNativeDriver: true,
           }),
           Animated.timing(contentSlideAnim, {
-            toValue: 0, // Slide to original position
+            toValue: 0,
             duration: 250,
             useNativeDriver: true,
           }),
         ]).start();
       });
     } else if (appReady && activeNavItem === displayActiveNavItem && (contentFadeAnim._value !== 1 || contentSlideAnim._value !== 0)) {
-      // On initial load or if user rapidly clicks the same item, ensure it's fully visible without re-animating
       contentFadeAnim.setValue(1);
       contentSlideAnim.setValue(0);
     }
   }, [activeNavItem, appReady, displayActiveNavItem, contentFadeAnim, contentSlideAnim, navItemOrderMap]);
 
 
+  // --- REVERTED: fetchReports now directly hits the API for paginated data ---
   const fetchReports = useCallback(async (signal, pageToFetch = currentPage, limitToFetch = selectedLimit) => {
     if (!signal?.aborted) {
-      // Only show full loading spinner for first page load or limit change (not for "load more" if it were still active)
       if (pageToFetch === 1 || limitToFetch !== selectedLimit) {
         setLoadingReports(true);
-        setReports([]);
+        setReports([]); // Clear reports when changing page/limit or first load
       }
       setErrorReports(null);
     }
@@ -233,18 +221,16 @@ const DashboardScreen = () => {
       const category = 'cleanliness';
       const status = 'todo';
 
-      // Determine the limit parameter for the API call
       let apiLimit = limitToFetch;
       if (limitToFetch === 'all') {
-        apiLimit = 100000; // Use a very large number to fetch all data
+        apiLimit = 100000; // Use a very large number to fetch all data for export or full table
       }
 
-      // If 'all' data is requested, we reset pageToFetch to 1 regardless, as it's not truly paginated then
       const effectivePage = (limitToFetch === 'all') ? 1 : pageToFetch;
 
       const endpoint = `https://ptm-tracker-service.onrender.com/api/v1/report/list?page=${effectivePage}&limit=${apiLimit}&category=${category}&status=${status}`;
 
-      console.log('Fetching reports from endpoint:', endpoint);
+      console.log('[fetchReports] Fetching paginated reports from endpoint:', endpoint);
 
       const headers = {
         'Content-Type': 'application/json',
@@ -260,7 +246,7 @@ const DashboardScreen = () => {
       });
 
       if (signal?.aborted) {
-        console.log('Fetch aborted for page:', pageToFetch);
+        console.log('[fetchReports] Fetch aborted for page:', pageToFetch);
         return;
       }
 
@@ -277,7 +263,7 @@ const DashboardScreen = () => {
       }
       const data = await response.json();
 
-      console.log('API Response Data:', data);
+      console.log('[fetchReports] API Response Data:', data);
 
       if (data && data.data && data.data.listData) {
         // When 'all' is selected, always replace previous reports
@@ -290,11 +276,11 @@ const DashboardScreen = () => {
           setTotalItems(data.data.meta.total || 0);
         } else {
           setTotalPages(1);
-          setTotalItems(0);
+          setTotalItems(data.data.listData.length); // If no meta, total items is just what we fetched
           console.warn("API response meta data not found.");
         }
       } else {
-        if (effectivePage === 1) { // Also clear if no data on first page/all data fetch
+        if (effectivePage === 1) {
           setReports([]);
         }
         setTotalPages(1);
@@ -303,9 +289,9 @@ const DashboardScreen = () => {
       }
     } catch (error) {
       if (error.name === 'AbortError') {
-        console.log('Fetch request was aborted intentionally.');
+        console.log('[fetchReports] Fetch request was aborted intentionally.');
       } else {
-        console.error("Error fetching reports:", error);
+        console.error("[fetchReports] Error fetching reports:", error);
         setErrorReports(error.message);
         Alert.alert('Gagal Memuat Laporan', `Terjadi kesalahan saat memuat data: ${error.message}`);
       }
@@ -314,43 +300,54 @@ const DashboardScreen = () => {
         setLoadingReports(false);
       }
     }
-  }, [currentPage, navigation, userToken, selectedLimit]); // selectedLimit is a dependency here
+  }, [currentPage, navigation, userToken, selectedLimit]);
+  // ----------------------------------------------------------------------
 
-  // Effect to trigger data fetching or navigation once app is ready or page/limit changes
+
+  // --- REMOVED: fetchChartReports is now handled by DashboardContent ---
+  // --- REMOVED: fetchInitialData (global allReports) is now handled by DashboardContent ---
+
+
+  // Main useEffect for data fetching/processing based on active display item
   useEffect(() => {
     const controller = new AbortController();
     const signal = controller.signal;
 
     if (appReady) {
       if (userToken) {
-        // Only fetch if the currently *displayed* navigation item is 'Data Report'
-        // This ensures fetch is tied to the actual content being rendered after animation.
         if (displayActiveNavItem === 'Data Report') {
+          console.log('[Main useEffect] Triggering fetchReports for Data Report page.');
           fetchReports(signal, currentPage, selectedLimit);
-        } else {
-          setLoadingReports(false);
+          // When navigating to Data Report, ensure chart data is not being used
+          // (DashboardContent will manage its own chart data loading/error state)
+        } else if (displayActiveNavItem === 'Dashboard') {
+          console.log('[Main useEffect] Displaying Dashboard content.');
+          // DashboardContent will fetch its own data. Clear table states if necessary.
           setReports([]);
+          setLoadingReports(false);
           setErrorReports(null);
         }
       } else {
-        console.log('Aplikasi siap tapi tidak ada user token ditemukan, mengarahkan ke Login.');
+        console.log('[Main useEffect] App ready but no user token found, redirecting to Login.');
         navigation.replace('Login');
+        setReports([]);
         setLoadingReports(false);
         setErrorReports('Tidak ada sesi yang aktif. Silakan login.');
       }
     } else {
+      console.log('[Main useEffect] App not ready, showing loading screen.');
       setLoadingReports(true);
     }
 
     return () => {
-      console.log('Aborting ongoing fetch for cleanup...');
+      console.log('[Main useEffect cleanup] Aborting ongoing fetch for cleanup...');
       controller.abort();
     };
-  }, [fetchReports, currentPage, appReady, userToken, navigation, displayActiveNavItem, selectedLimit]); // Use displayActiveNavItem here
+  }, [fetchReports, currentPage, appReady, userToken, navigation, displayActiveNavItem, selectedLimit]);
 
-  // Function to export all data from the frontend (CSV)
+
   const handleExportAllReports = useCallback(async () => {
-    setIsExporting(true); // Activate button loading state
+    setIsExporting(true);
     try {
       if (!userToken) {
         Alert.alert('Autentikasi Diperlukan', 'Silakan login kembali untuk mengekspor data.');
@@ -358,9 +355,10 @@ const DashboardScreen = () => {
         return;
       }
 
-      // === Step 1: Fetch ALL data from the API ===
+      // To export ALL data, we need to make another API call here
+      // as `reports` state only holds paginated data.
       const allReportsEndpoint = `https://ptm-tracker-service.onrender.com/api/v1/report/list?category=cleanliness&status=todo&limit=100000`;
-      console.log('Fetching ALL reports for export from endpoint:', allReportsEndpoint);
+      console.log('[handleExportAllReports] Fetching ALL reports for export from endpoint:', allReportsEndpoint);
 
       const headers = {
         'Content-Type': 'application/json',
@@ -391,7 +389,6 @@ const DashboardScreen = () => {
         return;
       }
 
-      // === Step 2: Format Data into CSV ===
       const csvHeaders = ['Nama Menu', 'Zona', 'Spot', 'Kategori', 'Direport oleh', 'Direport tanggal', 'Status'];
 
       const escapeCsvValue = (value) => {
@@ -422,7 +419,6 @@ const DashboardScreen = () => {
         ...csvRows
       ].join('\n');
 
-      // === Step 3: Use Linking to try and open the CSV ===
       const encodedCsv = encodeURIComponent(csvString);
       const dataUri = `data:text/csv;charset=utf-8,${encodedCsv}`;
 
@@ -439,25 +435,23 @@ const DashboardScreen = () => {
       }
 
     } catch (error) {
-      console.error("Error saat ekspor laporan:", error);
+      console.error("[handleExportAllReports] Error saat ekspor laporan:", error);
       Alert.alert('Gagal Ekspor', `Terjadi kesalahan saat mengekspor data: ${error.message}`);
     } finally {
       setIsExporting(false);
     }
-  }, [userToken, navigation, convertToJakartaTime]);
+  }, [userToken, navigation, convertToJakartaTime]); // allReports removed from dependency
 
   const toggleSidebar = () => {
     setIsSidebarOpen(prev => !prev);
   };
 
   const handleNavItemPress = (itemName) => {
-    // Only change activeNavItem, the useEffect will handle the transition
     setActiveNavItem(itemName);
     if (!isDesktop) {
       setIsSidebarOpen(false);
     }
     console.log(`Navigating to: ${itemName}`);
-    // Reset currentPage to 1 when navigating to 'Data Report' or changing limit
     if (itemName === 'Data Report') {
       setCurrentPage(1);
     }
@@ -475,10 +469,9 @@ const DashboardScreen = () => {
     }
   };
 
-  // New function to handle limit selection from the DropdownPicker
   const handleLimitChange = (newLimit) => {
-    setSelectedLimit(newLimit); // Update the selected limit
-    setCurrentPage(1); // Reset to first page when limit changes, which triggers re-fetch
+    setSelectedLimit(newLimit);
+    setCurrentPage(1);
   };
 
   const getInitialsAndColor = (name) => {
@@ -532,7 +525,6 @@ const DashboardScreen = () => {
     );
   };
 
-  // Function to render main content based on the currently *displayed* navigation item
   const renderMainContentBasedOnDisplay = () => {
     if (!appReady) {
         return (
@@ -551,35 +543,35 @@ const DashboardScreen = () => {
         );
     }
 
-    // Render content based on `displayActiveNavItem` state
     if (displayActiveNavItem === 'Dashboard') {
-        return <DashboardContent />;
+        // DashboardContent will now fetch its own data
+        return (
+          <DashboardContent
+            userToken={userToken} // Pass userToken to DashboardContent for its fetch
+            navigation={navigation} // Pass navigation for potential redirect from DashboardContent
+          />
+        );
     } else if (displayActiveNavItem === 'Data Report') {
         const tableHeaders = ['Nama Menu', 'Zona', 'Spot', 'Kategori', 'Direport oleh', 'Direport tanggal', 'Status', 'Aksi'];
 
         return (
             <View style={styles.dataReportPageContainer}>
-                {/* Page Title */}
                 <Text style={styles.dataReportTitle}>5R-TRACKER DATA REPORT</Text>
 
-                {/* Container for pagination limit dropdown and export button */}
                 <View style={styles.controlsContainer}>
-                    {/* Pagination Limit Dropdown */}
                     <DropdownPicker
                         options={paginationLimitOptions}
                         selectedValue={selectedLimit}
                         onValueChange={handleLimitChange}
                         placeholder="Tampilkan item"
-                        // Pass styles to customize the dropdown appearance
                         buttonStyle={styles.paginationDropdownButton}
                         buttonTextStyle={styles.paginationDropdownButtonText}
                         dropdownStyle={styles.paginationDropdownOptionsContainer}
                         optionStyle={styles.paginationDropdownOption}
                         optionTextStyle={styles.paginationDropdownOptionText}
-                        maxDropdownHeight={200} // Example: specify max height
+                        maxDropdownHeight={200}
                     />
 
-                    {/* Export Button */}
                     <TouchableOpacity
                         style={[styles.exportButton, isExporting && styles.exportButtonDisabled]}
                         onPress={handleExportAllReports}
@@ -596,8 +588,7 @@ const DashboardScreen = () => {
                     </TouchableOpacity>
                 </View>
 
-                {/* Report Table Logic */}
-                {loadingReports && reports.length === 0 ? (
+                {loadingReports ? (
                     <View style={styles.centeredMessage}>
                         <ActivityIndicator size="large" color="#0073fe" />
                         <Text style={styles.messageText}>Memuat data laporan...</Text>
@@ -615,7 +606,6 @@ const DashboardScreen = () => {
                     <View style={styles.tableContainerWrapper}>
                         <ScrollView horizontal={true} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScrollContent}>
                             <View style={styles.tableContainer}>
-                                {/* Table Header */}
                                 <View style={styles.tableHeaderRow}>
                                     <View style={[styles.tableHeaderCellContainer, styles.columnMenuName]}><Text style={styles.tableHeaderCell}>{tableHeaders[0]}</Text></View>
                                     <View style={[styles.tableHeaderCellContainer, styles.columnZoneName]}><Text style={styles.tableHeaderCell}>{tableHeaders[1]}</Text></View>
@@ -627,7 +617,6 @@ const DashboardScreen = () => {
                                     <View style={[styles.tableHeaderCellContainer, styles.columnAction]}><Text style={styles.tableHeaderCell}>{tableHeaders[7]}</Text></View>
                                 </View>
 
-                                {/* Data Rows */}
                                 {reports.map((report, rowIndex) => {
                                     const { initials, color } = getInitialsAndColor(report.createdBy);
                                     return (
@@ -685,7 +674,6 @@ const DashboardScreen = () => {
                                 })}
                             </View>
                         </ScrollView>
-                        {/* Pagination Text - simplified as Load More button is replaced */}
                         {reports.length > 0 && (
                             <Text style={[styles.paginationText, { paddingHorizontal: 20, marginTop: 10 }]}>
                                 Menampilkan {reports.length} dari {totalItems} laporan.
@@ -699,15 +687,7 @@ const DashboardScreen = () => {
     return null;
   };
 
-  if (!appReady) {
-    return (
-      <View style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color="#0073fe" />
-        <Text style={styles.messageText}>Memuat aplikasi...</Text>
-      </View>
-    );
-  }
-
+  // The main return statement for the DashboardScreen component
   return (
     <SafeAreaView style={styles.container}>
       <MainHeader subtitle="Selamat datang kembali di dashboard Anda!" onLogout={handleLogout} />
@@ -717,7 +697,7 @@ const DashboardScreen = () => {
           isSidebarOpen={isSidebarOpen}
           animatedSidebarWidth={animatedSidebarWidth}
           isDesktop={isDesktop}
-          activeNavItem={activeNavItem} // Pass activeNavItem to sidebar
+          activeNavItem={activeNavItem}
           onNavItemPress={handleNavItemPress}
         />
 
@@ -741,10 +721,9 @@ const DashboardScreen = () => {
             </TouchableOpacity>
           )}
 
-          {/* Wrap the content in an Animated.View for page transitions */}
           <Animated.View style={[
             {
-              flex: 1, // Make sure it takes full height/width available
+              flex: 1,
               opacity: contentFadeAnim,
               transform: [{ translateY: contentSlideAnim }],
             }
@@ -778,7 +757,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0f0f0',
   },
   dashboardContentScrollView: {
-    paddingTop: 70, // Adjust this if your content is too close to the top
+    paddingTop: 70,
   },
   title: {
     fontSize: 28,
@@ -811,49 +790,35 @@ const styles = StyleSheet.create({
     width: '100%',
     marginTop: 20,
   },
-  // New style for Data Report page title
   dataReportTitle: {
     marginTop:-80,
     fontSize: 24,
     fontWeight: 'bold',
     color: '#666',
-    marginBottom: 30, // Adjusted margin to make space for new controls
+    marginBottom: 30,
     textAlign: 'left',
   },
-  // New style for the controls container (dropdown and export button)
   controlsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20, // Space between controls and table
-    zIndex: 10, // Ensure controls (especially dropdown) are above other content
+    marginBottom: 20,
+    zIndex: 10,
   },
-  // Styles for the DropdownPicker's button
   paginationDropdownButton: {
-    // You can customize the button appearance here
-    minWidth: 180, // Example: make it wider
+    minWidth: 180,
   },
   paginationDropdownButtonText: {
-    // Customize text inside the button
   },
-  // Styles for the DropdownPicker's options container (Animated.View)
   paginationDropdownOptionsContainer: {
-    // Customize the dropdown menu container appearance
-    // For example, to match the button's width precisely:
-    // width: 'auto', // Remove explicit width if button handles it
-    // borderColor: '#0073fe',
-    // borderWidth: 1,
   },
   paginationDropdownOption: {
-    // Customize each option item
     paddingVertical: 12,
     paddingHorizontal: 15,
-    // Add a border to separate options visually, but not the last one
     borderBottomWidth: 1,
     borderBottomColor: '#EEE',
   },
   paginationDropdownOptionText: {
-    // Customize text of each option
   },
   tableContainerWrapper: {
     width: '100%',
@@ -866,8 +831,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
-    marginTop: 0, // No extra margin as it's within a controlled container
-    zIndex: 0, // Ensure table is below controls
+    marginTop: 0,
+    zIndex: 0,
   },
   horizontalScrollContent: {
   },
@@ -980,11 +945,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#f0f0f0',
   },
-  // Style for the export button on the Data Report page
   exportButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#28a745', // Green color for export button
+    backgroundColor: '#28a745',
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 8,
@@ -1003,7 +967,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   exportButtonDisabled: {
-    opacity: 0.7, // Slightly transparent when disabled
+    opacity: 0.7,
   }
 });
 

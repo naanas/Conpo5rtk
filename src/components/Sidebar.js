@@ -32,8 +32,8 @@ const Sidebar = ({ isSidebarOpen, animatedSidebarWidth, isDesktop, activeNavItem
   }
 
   const navItems = [
-    { name: 'Dashboard', icon: 'view-dashboard' },
-    { name: 'Data Report', icon: 'chart-bell-curve' },
+    { name: 'Dashboard', icon: 'chart-bell-curve' },
+    { name: 'Data Report', icon: 'view-dashboard' },
   ];
 
   return (
