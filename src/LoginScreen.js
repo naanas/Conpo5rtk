@@ -261,9 +261,10 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   welcomeLogo: {
-    width: 150,
-    height: 150,
-    marginBottom: 20,
+    marginTop:-200,
+    width: 400,
+    height: 400,
+    marginBottom: -100,
   },
   welcomeText: {
     fontSize: 50,

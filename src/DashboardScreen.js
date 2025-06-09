@@ -11,16 +11,18 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
-  Linking
+  Linking,
+  Modal // Import Modal here as well, though it's used in ReportDetailModal
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
-import MainHeader from './components/MainHeader';
-import Sidebar from './components/Sidebar';
+import MainHeader from '../src/components/MainHeader';
+import Sidebar from '../src/components/Sidebar';
 import Icon from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import DashboardContent from './components/DashboardContent';
-import DropdownPicker from './components/DropdownPicker';
+import DashboardContent from '../src/components/DashboardContent';
+import DropdownPicker from '../src/components/DropdownPicker';
+import ReportDetailModal from '../src/components/ReportDetailModals'; // Import the new modal component
 
 const DashboardScreen = () => {
   const navigation = useNavigation();
@@ -64,6 +66,13 @@ const DashboardScreen = () => {
     'Dashboard': 0,
     'Data Report': 1,
   }).current;
+
+  // New states for the Report Detail Modal
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [selectedReportDetail, setSelectedReportDetail] = useState(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [errorDetail, setErrorDetail] = useState(null);
+
 
   const estimatedHeaderHeight = Platform.select({
     ios: 80,
@@ -207,7 +216,6 @@ const DashboardScreen = () => {
   }, [activeNavItem, appReady, displayActiveNavItem, contentFadeAnim, contentSlideAnim, navItemOrderMap]);
 
 
-  // --- REVERTED: fetchReports now directly hits the API for paginated data ---
   const fetchReports = useCallback(async (signal, pageToFetch = currentPage, limitToFetch = selectedLimit) => {
     if (!signal?.aborted) {
       if (pageToFetch === 1 || limitToFetch !== selectedLimit) {
@@ -292,7 +300,6 @@ const DashboardScreen = () => {
         console.log('[fetchReports] Fetch request was aborted intentionally.');
       } else {
         console.error("[fetchReports] Error fetching reports:", error);
-        setErrorReports(error.message);
         Alert.alert('Gagal Memuat Laporan', `Terjadi kesalahan saat memuat data: ${error.message}`);
       }
     } finally {
@@ -301,14 +308,8 @@ const DashboardScreen = () => {
       }
     }
   }, [currentPage, navigation, userToken, selectedLimit]);
-  // ----------------------------------------------------------------------
 
 
-  // --- REMOVED: fetchChartReports is now handled by DashboardContent ---
-  // --- REMOVED: fetchInitialData (global allReports) is now handled by DashboardContent ---
-
-
-  // Main useEffect for data fetching/processing based on active display item
   useEffect(() => {
     const controller = new AbortController();
     const signal = controller.signal;
@@ -318,11 +319,8 @@ const DashboardScreen = () => {
         if (displayActiveNavItem === 'Data Report') {
           console.log('[Main useEffect] Triggering fetchReports for Data Report page.');
           fetchReports(signal, currentPage, selectedLimit);
-          // When navigating to Data Report, ensure chart data is not being used
-          // (DashboardContent will manage its own chart data loading/error state)
         } else if (displayActiveNavItem === 'Dashboard') {
           console.log('[Main useEffect] Displaying Dashboard content.');
-          // DashboardContent will fetch its own data. Clear table states if necessary.
           setReports([]);
           setLoadingReports(false);
           setErrorReports(null);
@@ -355,8 +353,6 @@ const DashboardScreen = () => {
         return;
       }
 
-      // To export ALL data, we need to make another API call here
-      // as `reports` state only holds paginated data.
       const allReportsEndpoint = `https://ptm-tracker-service.onrender.com/api/v1/report/list?category=cleanliness&status=todo&limit=100000`;
       console.log('[handleExportAllReports] Fetching ALL reports for export from endpoint:', allReportsEndpoint);
 
@@ -440,7 +436,7 @@ const DashboardScreen = () => {
     } finally {
       setIsExporting(false);
     }
-  }, [userToken, navigation, convertToJakartaTime]); // allReports removed from dependency
+  }, [userToken, navigation, convertToJakartaTime]);
 
   const toggleSidebar = () => {
     setIsSidebarOpen(prev => !prev);
@@ -515,15 +511,78 @@ const DashboardScreen = () => {
     }
   };
 
-  const handleMoreOptions = (reportId) => {
-    Alert.alert(
-      "Opsi Laporan",
-      `Anda memilih laporan dengan ID: ${reportId}\n\nFitur ini akan dikembangkan di masa mendatang.`,
-      [
-        { text: "OK", style: "cancel" }
-      ]
-    );
-  };
+  // Modified fetchReportDetails to return data or throw error
+  const fetchReportDetails = useCallback(async (reportId) => {
+    if (!userToken) {
+      // Return null or throw error if no token, caller will handle redirection
+      return null;
+    }
+
+    try {
+      const endpoint = `https://ptm-tracker-service.onrender.com/api/v1/report/${reportId}`;
+      console.log(`[fetchReportDetails] Fetching details for report ID: ${reportId} from ${endpoint}`);
+
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${userToken}`,
+      };
+
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers: headers,
+      });
+
+      if (response.status === 401) {
+        await AsyncStorage.removeItem('userToken');
+        navigation.replace('Login');
+        throw new Error('Sesi Anda telah habis. Silakan login kembali.');
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`Gagal mengambil detail laporan: ${errorData.message || response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log('[fetchReportDetails] API Response Data:', data);
+
+      if (data && data.data) {
+        return data.data; // Return the report data object
+      } else {
+        throw new Error('Data detail laporan tidak ditemukan atau format tidak sesuai.');
+      }
+
+    } catch (error) {
+      console.error("[fetchReportDetails] Error fetching report details:", error);
+      throw error; // Re-throw to be caught by handleMoreOptions
+    }
+  }, [userToken, navigation]);
+
+
+  // Modified handleMoreOptions to show modal
+  const handleMoreOptions = useCallback(async (reportId) => {
+    console.log(`[handleMoreOptions] Tombol titik tiga diklik untuk laporan ID: ${reportId}`);
+
+    // Set loading state and reset previous detail/error
+    setLoadingDetail(true);
+    setSelectedReportDetail(null);
+    setErrorDetail(null);
+    setShowDetailModal(true); // Show modal immediately with loading state
+
+    try {
+      const reportData = await fetchReportDetails(reportId);
+      if (reportData) {
+        setSelectedReportDetail(reportData);
+      } else {
+        setErrorDetail('Gagal memuat detail laporan: Data tidak ditemukan.');
+      }
+    } catch (error) {
+      console.error("[handleMoreOptions] Error when fetching report details for modal:", error);
+      setErrorDetail(`Gagal memuat detail laporan: ${error.message}`);
+    } finally {
+      setLoadingDetail(false);
+    }
+  }, [fetchReportDetails]); // Add fetchReportDetails as a dependency
 
   const renderMainContentBasedOnDisplay = () => {
     if (!appReady) {
@@ -544,11 +603,10 @@ const DashboardScreen = () => {
     }
 
     if (displayActiveNavItem === 'Dashboard') {
-        // DashboardContent will now fetch its own data
         return (
           <DashboardContent
-            userToken={userToken} // Pass userToken to DashboardContent for its fetch
-            navigation={navigation} // Pass navigation for potential redirect from DashboardContent
+            userToken={userToken}
+            navigation={navigation}
           />
         );
     } else if (displayActiveNavItem === 'Data Report') {
@@ -623,7 +681,7 @@ const DashboardScreen = () => {
                                         <TouchableOpacity
                                             key={report.id || `row-${rowIndex}`}
                                             style={styles.reportCardTouchable}
-                                            onPress={() => handleMoreOptions(report.id)}
+                                            // onPress={() => handleMoreOptions(report.id)} // Menghapus onPress dari row keseluruhan
                                         >
                                             <View style={styles.reportCardInnerContent}>
                                                 <View style={[styles.tableCellContainer, styles.columnMenuName]}>
@@ -660,7 +718,7 @@ const DashboardScreen = () => {
                                                 <View style={[styles.tableCellContainer, styles.columnAction]}>
                                                     <TouchableOpacity
                                                         onPress={(e) => {
-                                                            e.stopPropagation();
+                                                            e.stopPropagation(); // Mencegah event sentuh menyebar ke parent jika ada
                                                             handleMoreOptions(report.id);
                                                         }}
                                                         style={styles.actionButton}
@@ -687,7 +745,6 @@ const DashboardScreen = () => {
     return null;
   };
 
-  // The main return statement for the DashboardScreen component
   return (
     <SafeAreaView style={styles.container}>
       <MainHeader subtitle="Selamat datang kembali di dashboard Anda!" onLogout={handleLogout} />
@@ -737,6 +794,16 @@ const DashboardScreen = () => {
           </Animated.View>
         </View>
       </View>
+
+      {/* Report Detail Modal */}
+      <ReportDetailModal
+        isVisible={showDetailModal}
+        onClose={() => setShowDetailModal(false)}
+        reportData={selectedReportDetail}
+        isLoading={loadingDetail}
+        error={errorDetail}
+        convertToJakartaTime={convertToJakartaTime}
+      />
     </SafeAreaView>
   );
 };
