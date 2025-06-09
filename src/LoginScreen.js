@@ -158,7 +158,7 @@ const LoginScreen = () => {
               eiusmod tempor incididunt ut labore et dolore magna aliqua.
             </Text>
             <TouchableOpacity style={styles.learnMoreButton}>
-              <Text style={styles.learnMoreButtonText}>Learn More</Text>
+              <Text style={styles.learnMoreButtonText}>Learn more information</Text>
             </TouchableOpacity>
           </Animated.View>
 
